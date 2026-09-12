@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" data-bs-theme="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Эволюта эллипса (Bootstrap 5)</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  html, body { height: 100%; }
+  body { overflow: hidden; }
+
+  #canvasWrap { position: relative; min-width: 0; }
+  #c { display: block; width: 100%; height: 100%; background: #0a0e14; }
+
+  .sidebar {
+    width: 320px;
+    overflow-y: auto;
+    background: #788eb3;
+    border-left: 1px solid #232a36;
+  }
+  @media (max-width: 768px) {
+    .sidebar { width: 100%; border-left: none; border-top: 1px solid #232a36; }
+  }
+
+  .val {
+    color: #ffd166;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  .legend-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  .form-range::-webkit-slider-thumb { background: #ffffff; }
+  .form-range::-moz-range-thumb     { background: #faf9fa; }
+  .form-range::-webkit-slider-runnable-track { background: #232a36; }
+  .form-range::-moz-range-track     { background: #232a36; }
+
+  .badge-angle {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="d-flex vh-100 flex-column flex-md-row">
+
+  <!-- Область рисования -->
+  <div id="canvasWrap" class="flex-grow-1">
+    <canvas id="c"></canvas>
+  </div>
+
+  <!-- Панель управления -->
+  <aside class="sidebar p-3 p-md-4">
+
+    <h5 class="mb-1">2D блочная модель оползневого тела</h5>
+    <p class="text-body-secondary small mb-4">
+      Задайте параметры для расчета:
+    </p>
+
+    <!-- Полуось a -->
+    <label for="a" class="form-label d-flex justify-content-between mb-1">
+      <span>Полуось <em>a</em></span>
+      <span class="val" id="av">230</span>
+    </label>
+    <input type="range" class="form-range" id="a" min="40" max="420" step="1" value="230">
+
+    <!-- Полуось b -->
+    <label for="b" class="form-label d-flex justify-content-between mb-1">
+      <span>Полуось <em>b</em></span>
+      <span class="val" id="bv">140</span>
+    </label>
+    <input type="range" class="form-range" id="b" min="40" max="420" step="1" value="140">
+
+    <!-- Угол поворота -->
+    <label for="ang" class="form-label d-flex justify-content-between mb-1">
+      <span>Угол поворота</span>
+      <span class="val"><span id="angv">0</span>°</span>
+    </label>
+    <input type="range" class="form-range" id="ang" min="-180" max="180" step="1" value="0">
+
+    <div class="d-flex gap-2 mb-4">
+      <button class="btn btn-outline-secondary btn-sm flex-fill text-black" id="angMinus">−15°</button>
+      <button class="btn btn-outline-secondary btn-sm flex-fill text-black" id="angPlus">+15°</button>
+      <button class="btn btn-outline-secondary btn-sm flex-fill text-black" id="angReset">0°</button>
+    </div>
+
+    <hr class="border-secondary-subtle">
+
+    <!-- Число нормалей -->
+    <label for="n" class="form-label d-flex justify-content-between mb-1">
+      <span>Число нормалей</span>
+      <span class="val" id="nv">60</span>
+    </label>
+    <input type="range" class="form-range" id="n" min="4" max="240" step="1" value="60">
+
+    <hr class="border-secondary-subtle">
+
+    <!-- Переключатели -->
+    <div class="form-check form-switch mb-2">
+      <input class="form-check-input" type="checkbox" id="showEvolute" checked>
+      <label class="form-check-label" for="showEvolute">
+        <span class="legend-dot" style="background:#ff4fa3"></span>Эволюта
+      </label>
+    </div>
+    <div class="form-check form-switch mb-2">
+      <input class="form-check-input" type="checkbox" id="showNormals" checked>
+      <label class="form-check-label" for="showNormals">
+        <span class="legend-dot" style="background:#ffd166"></span>Нормали
+      </label>
+    </div>
+    <div class="form-check form-switch mb-2">
+      <input class="form-check-input" type="checkbox" id="fillEvolute">
+      <label class="form-check-label" for="fillEvolute">
+        <span class="legend-dot" style="background:rgba(255,79,163,.35)"></span>Заливка фигуры
+      </label>
+    </div>
+    <div class="form-check form-switch mb-4">
+      <input class="form-check-input" type="checkbox" id="showEllipse" checked>
+      <label class="form-check-label" for="showEllipse">
+        <span class="legend-dot" style="background:#4ea8ff"></span>Эллипс
+      </label>
+    </div>
+
+    <button class="btn btn-outline-light btn-sm w-100" id="reset">Сбросить всё</button>
+
+    <!-- <p class="text-body-secondary small mt-4 mb-0">
+      При <em>a</em> = <em>b</em> эллипс вырождается в окружность, и эволюта
+      стягивается в точку в центре — все нормали проходят через неё.
+    </p> -->
+
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('c');
+  const ctx    = canvas.getContext('2d');
+
+  const $ = id => document.getElementById(id);
+  const els = {
+    a: $('a'), b: $('b'), ang: $('ang'), n: $('n'),
+    showEvolute: $('showEvolute'),
+    showNormals: $('showNormals'),
+    fillEvolute: $('fillEvolute'),
+    showEllipse: $('showEllipse'),
+    av: $('av'), bv: $('bv'), angv: $('angv'), nv: $('nv'),
+  };
+
+  let W = 0, H = 0;
+
+  /* ----------------------- resize ----------------------- */
+  function resize() {
+    const dpr  = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    canvas.width  = Math.max(1, Math.round(W * dpr));
+    canvas.height = Math.max(1, Math.round(H * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }
+
+  /* ------------------------ render ---------------------- */
+  function draw() {
+    const a   = +els.a.value;
+    const b   = +els.b.value;
+    const phi = +els.ang.value * Math.PI / 180;
+    const N   = +els.n.value;
+
+    // Обновляем подписи
+    els.av.textContent   = a;
+    els.bv.textContent   = b;
+    els.angv.textContent = els.ang.value;
+    els.nv.textContent   = N;
+
+    const cx = W / 2;
+    const cy = H / 2;
+
+    // Матрица поворота
+    const c = Math.cos(phi), s = Math.sin(phi);
+    const rot = (x, y) => [x * c - y * s, x * s + y * c];
+
+    /* ---------- фон и оси ---------- */
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, cy);  ctx.lineTo(W, cy);
+    ctx.moveTo(cx, 0);  ctx.lineTo(cx, H);
+    ctx.stroke();
+
+    /* ---------- эллипс (повёрнутый) ---------- */
+    if (els.showEllipse.checked) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(phi);
+      ctx.strokeStyle = '#122faa';
+      ctx.lineWidth   = 1.8;
+      ctx.shadowColor = '#4ea8ff';
+      ctx.shadowBlur  = 8;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, a, b, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* ---------- нормали ----------
+       Для каждой параметрической точки t:
+         P₀(t) = (a·cos t, b·sin t)
+         E₀(t) = ((a²−b²)/a · cos³t, (b²−a²)/b · sin³t)
+       Обе точки поворачиваются одной и той же матрицей.
+       Отрезок P→E лежит ровно на нормали, направленной внутрь.
+    */
+    if (els.showNormals.checked) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.42)';
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
+        const t  = i / N * Math.PI * 2;
+        const ct = Math.cos(t), st = Math.sin(t);
+        const px = a * ct, py = b * st;
+        const ex = (a * a - b * b) / a * ct ** 3;
+        const ey = (b * b - a * a) / b * st ** 3;
+        const [Px, Py] = rot(px, py);
+        const [Ex, Ey] = rot(ex, ey);
+        ctx.moveTo(cx + Px, cy + Py);
+        ctx.lineTo(cx + Ex, cy + Ey);
+      }
+      ctx.stroke();
+    }
+
+    /* ---------- эволюта ---------- */
+    const steps   = 720;
+    const pathPts = new Array(steps + 1);
+    for (let i = 0; i <= steps; i++) {
+      const t  = i / steps * Math.PI * 2;
+      const ct = Math.cos(t), st = Math.sin(t);
+      const ex = (a * a - b * b) / a * ct ** 3;
+      const ey = (b * b - a * a) / b * st ** 3;
+      const [Ex, Ey] = rot(ex, ey);
+      pathPts[i] = [cx + Ex, cy + Ey];
+    }
+
+    if (els.fillEvolute.checked) {
+      ctx.fillStyle = 'rgba(252, 5, 63, 0.45);';
+      ctx.beginPath();
+      pathPts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    if (els.showEvolute.checked) {
+      ctx.strokeStyle = '#ff4fa3';
+      ctx.lineWidth   = 2;
+      ctx.shadowColor = '#ff4fa3';
+      ctx.shadowBlur  = 14;
+      ctx.beginPath();
+      pathPts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    /* ---------- центр ---------- */
+    ctx.fillStyle = '#e8ecf3';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /* ------------------------ events ---------------------- */
+  [els.a, els.b, els.ang, els.n,
+   els.showEvolute, els.showNormals, els.fillEvolute, els.showEllipse]
+    .forEach(el => el.addEventListener('input', draw));
+
+  function bumpAngle(delta) {
+    let v = +els.ang.value + delta;
+    if (v >  180) v -= 360;
+    if (v < -180) v += 360;
+    els.ang.value = v;
+    draw();
+  }
+  $('angMinus').addEventListener('click', () => bumpAngle(-15));
+  $('angPlus').addEventListener('click',  () => bumpAngle( 15));
+  $('angReset').addEventListener('click', () => { els.ang.value = 0; draw(); });
+
+  $('reset').addEventListener('click', () => {
+    els.a.value = 230;
+    els.b.value = 140;
+    els.ang.value = 0;
+    els.n.value = 60;
+    els.showEvolute.checked = true;
+    els.showNormals.checked = true;
+    els.fillEvolute.checked = false;
+    els.showEllipse.checked = true;
+    draw();
+  });
+
+  /* Авто-ресайз контейнера */
+  const wrap = document.getElementById('canvasWrap');
+  if (window.ResizeObserver) {
+    new ResizeObserver(resize).observe(wrap);
+  } else {
+    window.addEventListener('resize', resize);
+  }
+  resize();
+})();
+</script>
+</body>
+</html>
