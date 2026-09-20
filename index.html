@@ -1,321 +1,996 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
-<meta charset="utf-8" data-bs-theme="dark">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Эволюта эллипса (Bootstrap 5)</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<style>
-  html, body { height: 100%; }
-  body { overflow: hidden; }
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>2D блочная модель оползневого тела — 6 моделей</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+        }
 
-  #canvasWrap { position: relative; min-width: 0; }
-  #c { display: block; width: 100%; height: 100%; background: #0a0e14; }
+        body {
+            overflow: hidden;
+            background: #eef2f7;
+        }
 
-  .sidebar {
-    width: 320px;
-    overflow-y: auto;
-    background: #788eb3;
-    border-left: 1px solid #232a36;
-  }
-  @media (max-width: 768px) {
-    .sidebar { width: 100%; border-left: none; border-top: 1px solid #232a36; }
-  }
+        /* ---------- Общий каркас ---------- */
+        .app {
+            position: fixed;
+            inset: 3rem 0 0 0;
+            display: flex;
+        }
 
-  .val {
-    color: #ffd166;
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-  }
+        .canvas-area {
+            position: relative;
+            flex: 1 1 auto;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
 
-  .legend-dot {
-    display: inline-block;
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    margin-right: 6px;
-    vertical-align: middle;
-  }
+        /* ---------- Кнопка-гамбургер в правом верхнем углу ---------- */
+        .hamburger-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 20;
+            width: 42px;
+            height: 42px;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 0;
+            background: #ffffff;
+            border: 1px solid #dbe3ee;
+            border-radius: 10px;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, .08);
+            cursor: pointer;
+            transition: background .15s ease, transform .15s ease;
+        }
 
-  .form-range::-webkit-slider-thumb { background: #ffffff; }
-  .form-range::-moz-range-thumb     { background: #faf9fa; }
-  .form-range::-webkit-slider-runnable-track { background: #232a36; }
-  .form-range::-moz-range-track     { background: #232a36; }
+        .hamburger-btn:hover {
+            background: #f1f5f9;
+        }
 
-  .badge-angle {
-    font-variant-numeric: tabular-nums;
-    font-size: 0.85rem;
-  }
-</style>
+        .hamburger-btn:active {
+            transform: scale(.96);
+        }
+
+        .hamburger-btn span {
+            display: block;
+            width: 20px;
+            height: 2px;
+            background: #334155;
+            border-radius: 2px;
+            transition: transform .22s ease, opacity .18s ease;
+        }
+
+        .hamburger-btn.is-open span:nth-child(1) {
+            transform: translateY(6px) rotate(45deg);
+        }
+
+        .hamburger-btn.is-open span:nth-child(2) {
+            opacity: 0;
+        }
+
+        .hamburger-btn.is-open span:nth-child(3) {
+            transform: translateY(-6px) rotate(-45deg);
+        }
+
+        /* ---------- Контейнер двух рядов моделей ---------- */
+        .models-container {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 8px;
+            min-height: 0;
+            min-width: 0;
+        }
+
+        .models-row {
+            display: flex;
+            flex-direction: row;
+            gap: 8px;
+            flex: 1 1 0;
+            min-height: 0;
+            min-width: 0;
+            transition: flex-grow .28s ease;
+        }
+
+        /* Ряд, в котором есть активная модель, становится крупнее */
+        .models-row.has-active {
+            flex-grow: 2;
+        }
+
+        .model-cell {
+            position: relative;
+            flex: 1 1 0;
+            min-width: 0;
+            min-height: 0;
+            background: #fff;
+            border: 1px solid #dbe3ee;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
+            cursor: pointer;
+            transition: flex-grow .28s ease,
+                        box-shadow .22s ease,
+                        border-color .22s ease;
+        }
+
+        /* Активная модель получает больше места и подсветку */
+        .model-cell.active {
+            flex-grow: 2;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, .25),
+                        0 6px 18px rgba(37, 99, 235, .16);
+            z-index: 1;
+        }
+
+        .model-cell canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        /* У активной модели курсор «прицел» — понятно, что можно ставить точку */
+        .model-cell.active canvas {
+            cursor: crosshair;
+        }
+
+        .model-label {
+            position: absolute;
+            top: 6px;
+            left: 8px;
+            z-index: 2;
+            pointer-events: none;
+            font-size: 12px;
+            font-weight: 600;
+            color: #334155;
+            background: rgba(255, 255, 255, .88);
+            padding: 1px 9px;
+            border-radius: 999px;
+            border: 1px solid #e2e8f0;
+            transition: background .2s ease, color .2s ease, border-color .2s ease;
+        }
+
+        .model-cell.active .model-label {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+        }
+
+        /* Мобильная адаптация: модели в столбик */
+        @media (max-width: 900px) {
+            .models-row {
+                flex-direction: column;
+            }
+        }
+
+        /* ---------- Сворачиваемая боковая панель ---------- */
+        .sidebar {
+            flex: 0 0 340px;
+            width: 340px;
+            overflow: hidden;
+            background: #f7f9fc;
+            border-left: 1px solid #dbe3ee;
+            transition: flex-basis .25s ease, width .25s ease;
+        }
+
+        .sidebar.collapsed {
+            flex-basis: 0;
+            width: 0;
+            border-left: none;
+        }
+
+        .sidebar-inner {
+            width: 340px;
+            height: 100%;
+            overflow-y: auto;
+            padding: 14px;
+        }
+
+        /* ---------- Мелочи ---------- */
+        .legend-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+            flex: 0 0 auto;
+        }
+
+        .val {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+            color: #0d6efd;
+        }
+
+        .accordion-button {
+            padding: .45rem .7rem;
+            font-size: .875rem;
+        }
+
+        .accordion-body {
+            padding: .7rem;
+        }
+
+        .sidebar .form-label {
+            font-size: .78rem;
+            margin-bottom: .15rem;
+        }
+
+        .sidebar .form-range {
+            height: 1.05rem;
+            margin-bottom: .35rem;
+        }
+
+        .card-header {
+            font-size: .8rem;
+        }
+    </style>
 </head>
+
 <body>
 
-<div class="d-flex vh-100 flex-column flex-md-row">
+    <header class="p-1 text-bg-dark">
+        <div class="container">
+            <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start">
+                <a href="/" class="d-flex align-items-center mb-2 mb-lg-0 text-white text-decoration-none">
+                    <img src="/assets/images/gear.png" alt="icon for automated system">
+                </a>
 
-  <!-- Область рисования -->
-  <div id="canvasWrap" class="flex-grow-1">
-    <canvas id="c"></canvas>
-  </div>
+                <ul class="nav col-12 col-lg-auto ms-lg-2 me-lg-auto mb-2 justify-content-center mb-md-0">
+                    <li><a href="index.html" class="nav-link px-2 text-white">Data Input</a></li>
+                    <li><a href="features.html" class="nav-link px-2 text-warning">Modeling</a></li>
+                    <li><a href="about.html" class="nav-link px-2 text-white">About</a></li>
+                </ul>
 
-  <!-- Панель управления -->
-  <aside class="sidebar p-3 p-md-4">
+                <div class="text-end">
+                    <a href="sign-up.php" class="btn btn-warning">Sign out</a>
+                </div>
+            </div>
+        </div>
+    </header>
 
-    <h5 class="mb-1">2D блочная модель оползневого тела</h5>
-    <p class="text-body-secondary small mb-4">
-      Задайте параметры для расчета:
-    </p>
+    <div class="app">
 
-    <!-- Полуось a -->
-    <label for="a" class="form-label d-flex justify-content-between mb-1">
-      <span>Полуось <em>a</em></span>
-      <span class="val" id="av">230</span>
-    </label>
-    <input type="range" class="form-range" id="a" min="40" max="420" step="1" value="230">
+        <!-- ==================== Область моделей ==================== -->
+        <main class="canvas-area" id="canvasArea">
 
-    <!-- Полуось b -->
-    <label for="b" class="form-label d-flex justify-content-between mb-1">
-      <span>Полуось <em>b</em></span>
-      <span class="val" id="bv">140</span>
-    </label>
-    <input type="range" class="form-range" id="b" min="40" max="420" step="1" value="140">
+            <!-- Кнопка-гамбургер в правом верхнем углу -->
+            <button class="hamburger-btn" id="sidebarToggle" type="button"
+                title="Свернуть панель параметров" aria-label="Переключить панель параметров">
+                <span></span><span></span><span></span>
+            </button>
 
-    <!-- Угол поворота -->
-    <label for="ang" class="form-label d-flex justify-content-between mb-1">
-      <span>Угол поворота</span>
-      <span class="val"><span id="angv">0</span>°</span>
-    </label>
-    <input type="range" class="form-range" id="ang" min="-180" max="180" step="1" value="0">
+            <div class="models-container" id="modelsContainer">
+                <div class="models-row" id="row1"></div>
+                <div class="models-row" id="row2"></div>
+            </div>
+        </main>
 
-    <div class="d-flex gap-2 mb-4">
-      <button class="btn btn-outline-secondary btn-sm flex-fill text-black" id="angMinus">−15°</button>
-      <button class="btn btn-outline-secondary btn-sm flex-fill text-black" id="angPlus">+15°</button>
-      <button class="btn btn-outline-secondary btn-sm flex-fill text-black" id="angReset">0°</button>
+        <!-- ==================== Боковая панель ==================== -->
+        <aside class="sidebar collapsed" id="sidebar">
+            <div class="sidebar-inner">
+
+                <h6 class="mb-1 fw-bold">2D блочная модель оползневого тела</h6>
+                <p class="text-body-secondary small mb-3">Задайте параметры для расчета:</p>
+
+                <!-- Общие параметры -->
+                <div class="card mb-3">
+                    <div class="card-header py-2 fw-semibold">Общие параметры</div>
+                    <div class="card-body py-2">
+
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label" for="pointColor">Цвет точки</label>
+                                <input type="color" class="form-control form-control-color w-100" id="pointColor"
+                                    value="#000000" title="Цвет точки">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label d-flex justify-content-between" for="pointSize">
+                                    <span>Размер точки</span><span class="val" id="pointSizeV">4</span>
+                                </label>
+                                <input type="range" class="form-range" id="pointSize" min="1" max="20" step="1"
+                                    value="4">
+                            </div>
+                        </div>
+
+                        <label class="form-label d-flex justify-content-between mt-2" for="n">
+                            <span>Число нормалей</span><span class="val" id="nv">60</span>
+                        </label>
+                        <input type="range" class="form-range" id="n" min="4" max="240" step="1" value="60">
+                    </div>
+                </div>
+
+                <!-- Отображение -->
+                <div class="card mb-3">
+                    <div class="card-header py-2 fw-semibold">Отображение</div>
+                    <div class="card-body py-2">
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="showEllipse" checked>
+                            <label class="form-check-label small" for="showEllipse">
+                                <span class="legend-dot" style="background:#2563eb"></span>Эллипс
+                            </label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="showNormals" checked>
+                            <label class="form-check-label small" for="showNormals">
+                                <span class="legend-dot" style="background:#94a3b8"></span>Нормали
+                            </label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="showEvolute" checked>
+                            <label class="form-check-label small" for="showEvolute">
+                                <span class="legend-dot" style="background:#e11d48"></span>Эволюта
+                            </label>
+                        </div>
+
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="fillEvolute">
+                            <label class="form-check-label small" for="fillEvolute">
+                                <span class="legend-dot" style="background:rgba(225,29,72,.35)"></span>Заливка фигуры
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Параметры каждой модели -->
+                <div class="card mb-3">
+                    <div class="card-header py-2 fw-semibold">Параметры моделей 1–6</div>
+                    <div class="accordion accordion-flush" id="modelsAccordion"></div>
+                </div>
+
+                <button class="btn btn-outline-secondary btn-sm w-100 mb-3" id="reset">Сбросить всё</button>
+
+                <p class="text-body-secondary small mb-0">
+                    Координаты точки задаются в единицах полуосей (<em>a</em>, <em>b</em>)
+                    относительно центра эллипса.
+                </p>
+            </div>
+        </aside>
     </div>
 
-    <hr class="border-secondary-subtle">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        (() => {
+            'use strict';
 
-    <!-- Число нормалей -->
-    <label for="n" class="form-label d-flex justify-content-between mb-1">
-      <span>Число нормалей</span>
-      <span class="val" id="nv">60</span>
-    </label>
-    <input type="range" class="form-range" id="n" min="4" max="240" step="1" value="60">
+            /* ============================================================
+             *  Начальные параметры каждой из 6 моделей:
+             *    a, b   — полуоси эллипса
+             *    ang    — угол поворота, °
+             *    point  — начальные координаты точки
+             *             (в единицах полуосей относительно центра эллипса)
+             *
+             *  Модели 1–2 : a = 200, b = 100, угол 85°
+             *  Модели 3–4 : a = 230, b = 125, угол 85°
+             *  Модели 5–6 : a = 200, b = 100, угол 85°
+             * ============================================================ */
+            const DEFAULT_BY_INDEX = [
+                { a: 200, b: 100, ang: 85, point: { x:   6, y:   115 } },  // Модель 1
+                { a: 200, b: 100, ang: 85, point: { x:   4, y:   157 } },  // Модель 2
+                { a: 230, b: 125, ang: 85, point: { x:   11, y:   134 } },  // Модель 3
+                { a: 230, b: 125, ang: 85, point: { x:   16, y:   117 } },  // Модель 4
+                { a: 200, b: 100, ang: 85, point: { x:   32, y:   133 } },  // Модель 5
+                { a: 200, b: 100, ang: 85, point: { x:   -1, y:   143 } },  // Модель 6
+            ];
 
-    <hr class="border-secondary-subtle">
+            const N_MODELS = DEFAULT_BY_INDEX.length;
 
-    <!-- Переключатели -->
-    <div class="form-check form-switch mb-2">
-      <input class="form-check-input" type="checkbox" id="showEvolute" checked>
-      <label class="form-check-label" for="showEvolute">
-        <span class="legend-dot" style="background:#ff4fa3"></span>Эволюта
-      </label>
-    </div>
-    <div class="form-check form-switch mb-2">
-      <input class="form-check-input" type="checkbox" id="showNormals" checked>
-      <label class="form-check-label" for="showNormals">
-        <span class="legend-dot" style="background:#ffd166"></span>Нормали
-      </label>
-    </div>
-    <div class="form-check form-switch mb-2">
-      <input class="form-check-input" type="checkbox" id="fillEvolute">
-      <label class="form-check-label" for="fillEvolute">
-        <span class="legend-dot" style="background:rgba(255,79,163,.35)"></span>Заливка фигуры
-      </label>
-    </div>
-    <div class="form-check form-switch mb-4">
-      <input class="form-check-input" type="checkbox" id="showEllipse" checked>
-      <label class="form-check-label" for="showEllipse">
-        <span class="legend-dot" style="background:#4ea8ff"></span>Эллипс
-      </label>
-    </div>
+            const COMMON = {
+                ellipseColor: '#2563eb',
+                evoluteColor: '#e11d48',
+            };
 
-    <button class="btn btn-outline-light btn-sm w-100" id="reset">Сбросить всё</button>
+            const state = {
+                n: 60,
+                showEllipse: true,
+                showNormals: true,
+                showEvolute: true,
+                fillEvolute: false,
+                pointColor: '#000000',
+                pointSize: 4,
+            };
 
-    <!-- <p class="text-body-secondary small mt-4 mb-0">
-      При <em>a</em> = <em>b</em> эллипс вырождается в окружность, и эволюта
-      стягивается в точку в центре — все нормали проходят через неё.
-    </p> -->
+            const models = [];
 
-  </aside>
-</div>
+            for (let i = 0; i < N_MODELS; i++) {
+                const d = DEFAULT_BY_INDEX[i];
+                models.push({
+                    index: i,
+                    a: d.a,
+                    b: d.b,
+                    ang: d.ang,
+                    ellipseColor: COMMON.ellipseColor,
+                    evoluteColor: COMMON.evoluteColor,
+                    point: { x: d.point.x, y: d.point.y },
+                    canvas: null,
+                    ctx: null,
+                    cell: null,
+                    _scale: 1,
+                });
+            }
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-(() => {
-  'use strict';
+            let activeModelIndex = -1; // ни одна модель не активна изначально
 
-  const canvas = document.getElementById('c');
-  const ctx    = canvas.getContext('2d');
+            /* ============================================================
+             *  Утилиты
+             * ============================================================ */
+            const $ = id => document.getElementById(id);
 
-  const $ = id => document.getElementById(id);
-  const els = {
-    a: $('a'), b: $('b'), ang: $('ang'), n: $('n'),
-    showEvolute: $('showEvolute'),
-    showNormals: $('showNormals'),
-    fillEvolute: $('fillEvolute'),
-    showEllipse: $('showEllipse'),
-    av: $('av'), bv: $('bv'), angv: $('angv'), nv: $('nv'),
-  };
+            function hexToRgba(hex, alpha) {
+                const h = String(hex).replace('#', '');
+                const v = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+                const r = parseInt(v.slice(0, 2), 16);
+                const g = parseInt(v.slice(2, 4), 16);
+                const b = parseInt(v.slice(4, 6), 16);
+                return `rgba(${r},${g},${b},${alpha})`;
+            }
 
-  let W = 0, H = 0;
+            /* ============================================================
+             *  Габариты фигуры (эллипс + эволюта) с учётом поворота.
+             * ============================================================ */
+            function computeHalfExtents(m) {
+                const a = m.a, b = m.b;
+                const evX = Math.abs((a * a - b * b) / a);
+                const evY = Math.abs((a * a - b * b) / b);
 
-  /* ----------------------- resize ----------------------- */
-  function resize() {
-    const dpr  = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    W = rect.width;
-    H = rect.height;
-    canvas.width  = Math.max(1, Math.round(W * dpr));
-    canvas.height = Math.max(1, Math.round(H * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    draw();
-  }
+                const xHalf = Math.max(a, evX);
+                const yHalf = Math.max(b, evY);
 
-  /* ------------------------ render ---------------------- */
-  function draw() {
-    const a   = +els.a.value;
-    const b   = +els.b.value;
-    const phi = +els.ang.value * Math.PI / 180;
-    const N   = +els.n.value;
+                const phi = m.ang * Math.PI / 180;
+                const c = Math.abs(Math.cos(phi));
+                const s = Math.abs(Math.sin(phi));
 
-    // Обновляем подписи
-    els.av.textContent   = a;
-    els.bv.textContent   = b;
-    els.angv.textContent = els.ang.value;
-    els.nv.textContent   = N;
+                return {
+                    halfW: xHalf * c + yHalf * s,
+                    halfH: xHalf * s + yHalf * c,
+                };
+            }
 
-    const cx = W / 2;
-    const cy = H / 2;
+            function scaleForCanvas(m, W, H) {
+                const { halfW, halfH } = computeHalfExtents(m);
+                const margin = 10;
+                let s = Math.min((W / 2 - margin) / halfW, (H / 2 - margin) / halfH);
+                if (!isFinite(s) || s <= 0) s = 0.1;
+                return s;
+            }
 
-    // Матрица поворота
-    const c = Math.cos(phi), s = Math.sin(phi);
-    const rot = (x, y) => [x * c - y * s, x * s + y * c];
+            /* ============================================================
+             *  Отрисовка одной модели
+             * ============================================================ */
+            function drawModel(m) {
+                const canvas = m.canvas;
+                const ctx = m.ctx;
+                if (!canvas || !ctx) return;
 
-    /* ---------- фон и оси ---------- */
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, W, H);
+                const rect = canvas.getBoundingClientRect();
+                const W = rect.width;
+                const H = rect.height;
+                if (W < 4 || H < 4) return;
 
-    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-    ctx.lineWidth   = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, cy);  ctx.lineTo(W, cy);
-    ctx.moveTo(cx, 0);  ctx.lineTo(cx, H);
-    ctx.stroke();
+                const dpr = window.devicePixelRatio || 1;
+                const pw = Math.max(1, Math.round(W * dpr));
+                const ph = Math.max(1, Math.round(H * dpr));
+                if (canvas.width !== pw || canvas.height !== ph) {
+                    canvas.width = pw;
+                    canvas.height = ph;
+                }
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    /* ---------- эллипс (повёрнутый) ---------- */
-    if (els.showEllipse.checked) {
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(phi);
-      ctx.strokeStyle = '#122faa';
-      ctx.lineWidth   = 1.8;
-      ctx.shadowColor = '#4ea8ff';
-      ctx.shadowBlur  = 8;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, a, b, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
+                const cx = W / 2;
+                const cy = H / 2;
 
-    /* ---------- нормали ----------
-       Для каждой параметрической точки t:
-         P₀(t) = (a·cos t, b·sin t)
-         E₀(t) = ((a²−b²)/a · cos³t, (b²−a²)/b · sin³t)
-       Обе точки поворачиваются одной и той же матрицей.
-       Отрезок P→E лежит ровно на нормали, направленной внутрь.
-    */
-    if (els.showNormals.checked) {
-      ctx.strokeStyle = 'rgba(0,0,0,0.42)';
-      ctx.lineWidth   = 1;
-      ctx.beginPath();
-      for (let i = 0; i < N; i++) {
-        const t  = i / N * Math.PI * 2;
-        const ct = Math.cos(t), st = Math.sin(t);
-        const px = a * ct, py = b * st;
-        const ex = (a * a - b * b) / a * ct ** 3;
-        const ey = (b * b - a * a) / b * st ** 3;
-        const [Px, Py] = rot(px, py);
-        const [Ex, Ey] = rot(ex, ey);
-        ctx.moveTo(cx + Px, cy + Py);
-        ctx.lineTo(cx + Ex, cy + Ey);
-      }
-      ctx.stroke();
-    }
+                /* ---- фон ---- */
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, W, H);
 
-    /* ---------- эволюта ---------- */
-    const steps   = 720;
-    const pathPts = new Array(steps + 1);
-    for (let i = 0; i <= steps; i++) {
-      const t  = i / steps * Math.PI * 2;
-      const ct = Math.cos(t), st = Math.sin(t);
-      const ex = (a * a - b * b) / a * ct ** 3;
-      const ey = (b * b - a * a) / b * st ** 3;
-      const [Ex, Ey] = rot(ex, ey);
-      pathPts[i] = [cx + Ex, cy + Ey];
-    }
+                /* ---- оси ---- */
+                ctx.strokeStyle = 'rgba(15,23,42,0.07)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, cy); ctx.lineTo(W, cy);
+                ctx.moveTo(cx, 0); ctx.lineTo(cx, H);
+                ctx.stroke();
 
-    if (els.fillEvolute.checked) {
-      ctx.fillStyle = 'rgba(252, 5, 63, 0.45);';
-      ctx.beginPath();
-      pathPts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
-      ctx.closePath();
-      ctx.fill();
-    }
+                /* ---- поворот ---- */
+                const phi = m.ang * Math.PI / 180;
+                const cos = Math.cos(phi);
+                const sin = Math.sin(phi);
+                const rot = (x, y) => [x * cos - y * sin, x * sin + y * cos];
 
-    if (els.showEvolute.checked) {
-      ctx.strokeStyle = '#ff4fa3';
-      ctx.lineWidth   = 2;
-      ctx.shadowColor = '#ff4fa3';
-      ctx.shadowBlur  = 14;
-      ctx.beginPath();
-      pathPts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
+                /* ---- автомасштаб ---- */
+                const scale = scaleForCanvas(m, W, H);
+                m._scale = scale;
 
-    /* ---------- центр ---------- */
-    ctx.fillStyle = '#e8ecf3';
-    ctx.beginPath();
-    ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
+                const toX = x => cx + x * scale;
+                const toY = y => cy + y * scale;
 
-  /* ------------------------ events ---------------------- */
-  [els.a, els.b, els.ang, els.n,
-   els.showEvolute, els.showNormals, els.fillEvolute, els.showEllipse]
-    .forEach(el => el.addEventListener('input', draw));
+                /* ---- эллипс ---- */
+                if (state.showEllipse) {
+                    ctx.save();
+                    ctx.translate(cx, cy);
+                    ctx.rotate(phi);
+                    ctx.strokeStyle = m.ellipseColor;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, m.a * scale, m.b * scale, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
 
-  function bumpAngle(delta) {
-    let v = +els.ang.value + delta;
-    if (v >  180) v -= 360;
-    if (v < -180) v += 360;
-    els.ang.value = v;
-    draw();
-  }
-  $('angMinus').addEventListener('click', () => bumpAngle(-15));
-  $('angPlus').addEventListener('click',  () => bumpAngle( 15));
-  $('angReset').addEventListener('click', () => { els.ang.value = 0; draw(); });
+                /* ---- нормали ---- */
+                if (state.showNormals) {
+                    ctx.strokeStyle = 'rgba(15,23,42,0.28)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    for (let i = 0; i < state.n; i++) {
+                        const t = i / state.n * Math.PI * 2;
+                        const ct = Math.cos(t), st = Math.sin(t);
+                        const px = m.a * ct, py = m.b * st;
+                        const ex = (m.a * m.a - m.b * m.b) / m.a * ct ** 3;
+                        const ey = (m.b * m.b - m.a * m.a) / m.b * st ** 3;
+                        const [Px, Py] = rot(px, py);
+                        const [Ex, Ey] = rot(ex, ey);
+                        ctx.moveTo(toX(Px), toY(Py));
+                        ctx.lineTo(toX(Ex), toY(Ey));
+                    }
+                    ctx.stroke();
+                }
 
-  $('reset').addEventListener('click', () => {
-    els.a.value = 230;
-    els.b.value = 140;
-    els.ang.value = 0;
-    els.n.value = 60;
-    els.showEvolute.checked = true;
-    els.showNormals.checked = true;
-    els.fillEvolute.checked = false;
-    els.showEllipse.checked = true;
-    draw();
-  });
+                /* ---- эволюта ---- */
+                const STEPS = 480;
+                const pts = new Array(STEPS + 1);
+                for (let i = 0; i <= STEPS; i++) {
+                    const t = i / STEPS * Math.PI * 2;
+                    const ct = Math.cos(t), st = Math.sin(t);
+                    const ex = (m.a * m.a - m.b * m.b) / m.a * ct ** 3;
+                    const ey = (m.b * m.b - m.a * m.a) / m.b * st ** 3;
+                    const [Ex, Ey] = rot(ex, ey);
+                    pts[i] = [toX(Ex), toY(Ey)];
+                }
 
-  /* Авто-ресайз контейнера */
-  const wrap = document.getElementById('canvasWrap');
-  if (window.ResizeObserver) {
-    new ResizeObserver(resize).observe(wrap);
-  } else {
-    window.addEventListener('resize', resize);
-  }
-  resize();
-})();
-</script>
+                if (state.fillEvolute) {
+                    ctx.fillStyle = hexToRgba(m.evoluteColor, 0.16);
+                    ctx.beginPath();
+                    pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                if (state.showEvolute) {
+                    ctx.strokeStyle = m.evoluteColor;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+                    ctx.stroke();
+                }
+
+                /* ---- точка ---- */
+                if (m.point) {
+                    const px = toX(m.point.x);
+                    const py = toY(m.point.y);
+                    ctx.beginPath();
+                    ctx.arc(px, py, state.pointSize, 0, Math.PI * 2);
+                    ctx.fillStyle = state.pointColor;
+                    ctx.fill();
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+                    ctx.stroke();
+                }
+            }
+
+            /* ============================================================
+             *  Пакетная отрисовка
+             * ============================================================ */
+            let rafPending = false;
+            function scheduleDrawAll() {
+                if (rafPending) return;
+                rafPending = true;
+                requestAnimationFrame(() => {
+                    rafPending = false;
+                    models.forEach(drawModel);
+                });
+            }
+            function drawAll() {
+                models.forEach(drawModel);
+            }
+
+            /* ============================================================
+             *  Активная модель
+             *  index = -1  →  снять активность со всех
+             * ============================================================ */
+            const row1 = $('row1');
+            const row2 = $('row2');
+
+            function setActiveModel(index) {
+                if (activeModelIndex === index) return;
+                activeModelIndex = index;
+
+                models.forEach((m, i) => {
+                    m.cell.classList.toggle('active', i === index);
+                });
+
+                row1.classList.toggle('has-active', index >= 0 && index < 3);
+                row2.classList.toggle('has-active', index >= 3);
+
+                setTimeout(scheduleDrawAll, 320);
+            }
+
+            /* ============================================================
+             *  Создание 6 панелей
+             * ============================================================ */
+            models.forEach((m, i) => {
+                const cell = document.createElement('div');
+                cell.className = 'model-cell';
+
+                const canvas = document.createElement('canvas');
+                canvas.id = `canvas-${i}`;
+
+                const label = document.createElement('div');
+                label.className = 'model-label';
+                label.textContent = `Model ${i + 1}`;
+
+                cell.appendChild(canvas);
+                cell.appendChild(label);
+                (i < 3 ? row1 : row2).appendChild(cell);
+
+                m.cell = cell;
+                m.canvas = canvas;
+                m.ctx = canvas.getContext('2d');
+
+                attachPointer(canvas, m);
+            });
+
+            /* ============================================================
+             *  Клик по канвасу:
+             *    - если модель НЕ активна  →  только активируем её;
+             *    - если модель уже активна → ставим / перетаскиваем точку.
+             * ============================================================ */
+            function attachPointer(canvas, m) {
+                canvas.addEventListener('pointerdown', ev => {
+                    ev.preventDefault();
+
+                    if (activeModelIndex !== m.index) {
+                        setActiveModel(m.index);
+                        return;
+                    }
+
+                    const place = e => {
+                        const r = canvas.getBoundingClientRect();
+                        const sc = scaleForCanvas(m, r.width, r.height);
+                        m._scale = sc;
+
+                        const px = e.clientX - r.left - r.width / 2;
+                        const py = e.clientY - r.top - r.height / 2;
+                        m.point = {
+                            x: Math.round(px / sc),
+                            y: Math.round(py / sc),
+                        };
+                        updatePointInputs(m, m.index);
+                        drawModel(m);
+                    };
+
+                    try { canvas.setPointerCapture(ev.pointerId); } catch (_) { }
+                    place(ev);
+
+                    const onMove = e => { if (e.pointerId === ev.pointerId) place(e); };
+                    const onUp = () => {
+                        canvas.removeEventListener('pointermove', onMove);
+                        canvas.removeEventListener('pointerup', onUp);
+                        canvas.removeEventListener('pointercancel', onUp);
+                    };
+                    canvas.addEventListener('pointermove', onMove);
+                    canvas.addEventListener('pointerup', onUp);
+                    canvas.addEventListener('pointercancel', onUp);
+                });
+            }
+
+            /* ============================================================
+             *  Клик вне моделей → снять активность со всех
+             * ============================================================ */
+            document.addEventListener('pointerdown', ev => {
+                if (activeModelIndex === -1) return;
+                if (ev.target.closest('.model-cell')) return;
+                if (ev.target.closest('.sidebar')) return;
+                setActiveModel(-1);
+            });
+
+            /* ============================================================
+             *  Синхронизация полей координат точки
+             * ============================================================ */
+            function updatePointInputs(m, i, force = false) {
+                const pxEl = $(`px-${i}`);
+                const pyEl = $(`py-${i}`);
+                if (!pxEl || !pyEl) return;
+                if (!force && (document.activeElement === pxEl || document.activeElement === pyEl)) return;
+
+                if (m.point) {
+                    pxEl.value = Math.round(m.point.x);
+                    pyEl.value = Math.round(m.point.y);
+                } else {
+                    pxEl.value = '';
+                    pyEl.value = '';
+                }
+            }
+
+            /* ============================================================
+             *  Построение боковой панели
+             * ============================================================ */
+            function buildSidebar() {
+                const acc = $('modelsAccordion');
+
+                acc.innerHTML = models.map((m, i) => `
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#acc-${i}"
+                  aria-expanded="false" aria-controls="acc-${i}">
+            <span class="legend-dot" id="dot-${i}" style="background:${m.ellipseColor}"></span>
+            Модель ${i + 1}
+          </button>
+        </h2>
+        <div id="acc-${i}" class="accordion-collapse collapse" data-bs-parent="#modelsAccordion">
+          <div class="accordion-body">
+
+            <label class="form-label d-flex justify-content-between" for="a-${i}">
+              <span>Полуось <em>a</em></span><span class="val" id="av-${i}">${m.a}</span>
+            </label>
+            <input type="range" class="form-range" id="a-${i}"
+                   min="40" max="420" step="1" value="${m.a}">
+
+            <label class="form-label d-flex justify-content-between" for="b-${i}">
+              <span>Полуось <em>b</em></span><span class="val" id="bv-${i}">${m.b}</span>
+            </label>
+            <input type="range" class="form-range" id="b-${i}"
+                   min="40" max="420" step="1" value="${m.b}">
+
+            <label class="form-label d-flex justify-content-between" for="ang-${i}">
+              <span>Угол поворота</span>
+              <span class="val"><span id="angv-${i}">${m.ang}</span>°</span>
+            </label>
+            <input type="range" class="form-range" id="ang-${i}"
+                   min="-180" max="180" step="1" value="${m.ang}">
+
+            <div class="row g-2 mt-1">
+              <div class="col-6">
+                <label class="form-label" for="ec-${i}">Цвет эллипса</label>
+                <input type="color" class="form-control form-control-color w-100"
+                       id="ec-${i}" value="${m.ellipseColor}">
+              </div>
+              <div class="col-6">
+                <label class="form-label" for="vc-${i}">Цвет эволюты</label>
+                <input type="color" class="form-control form-control-color w-100"
+                       id="vc-${i}" value="${m.evoluteColor}">
+              </div>
+            </div>
+
+            <div class="row g-2 mt-2 align-items-end">
+              <div class="col-5">
+                <label class="form-label" for="px-${i}">Точка X</label>
+                <input type="number" class="form-control form-control-sm"
+                       id="px-${i}" step="1" value="${m.point.x}">
+              </div>
+              <div class="col-5">
+                <label class="form-label" for="py-${i}">Точка Y</label>
+                <input type="number" class="form-control form-control-sm"
+                       id="py-${i}" step="1" value="${m.point.y}">
+              </div>
+              <div class="col-2">
+                <button class="btn btn-sm btn-outline-secondary w-100"
+                        id="clr-${i}" title="Убрать точку">✕</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+                models.forEach((m, i) => {
+                    $(`a-${i}`).addEventListener('input', e => {
+                        m.a = +e.target.value;
+                        $(`av-${i}`).textContent = m.a;
+                        drawModel(m);
+                    });
+
+                    $(`b-${i}`).addEventListener('input', e => {
+                        m.b = +e.target.value;
+                        $(`bv-${i}`).textContent = m.b;
+                        drawModel(m);
+                    });
+
+                    $(`ang-${i}`).addEventListener('input', e => {
+                        m.ang = +e.target.value;
+                        $(`angv-${i}`).textContent = m.ang;
+                        drawModel(m);
+                    });
+
+                    $(`ec-${i}`).addEventListener('input', e => {
+                        m.ellipseColor = e.target.value;
+                        $(`dot-${i}`).style.background = m.ellipseColor;
+                        drawModel(m);
+                    });
+
+                    $(`vc-${i}`).addEventListener('input', e => {
+                        m.evoluteColor = e.target.value;
+                        drawModel(m);
+                    });
+
+                    const onPointInput = () => {
+                        const xEl = $(`px-${i}`);
+                        const yEl = $(`py-${i}`);
+                        const x = parseFloat(xEl.value);
+                        const y = parseFloat(yEl.value);
+
+                        if (Number.isFinite(x) && Number.isFinite(y)) {
+                            m.point = { x, y };
+                        } else if (Number.isFinite(x)) {
+                            m.point = { x, y: 0 };
+                            yEl.value = 0;
+                        } else if (Number.isFinite(y)) {
+                            m.point = { x: 0, y };
+                            xEl.value = 0;
+                        } else {
+                            m.point = null;
+                        }
+                        drawModel(m);
+                    };
+                    $(`px-${i}`).addEventListener('input', onPointInput);
+                    $(`py-${i}`).addEventListener('input', onPointInput);
+
+                    $(`clr-${i}`).addEventListener('click', () => {
+                        m.point = null;
+                        updatePointInputs(m, i, true);
+                        drawModel(m);
+                    });
+                });
+
+                models.forEach((m, i) => updatePointInputs(m, i, true));
+            }
+
+            /* ============================================================
+             *  Общие контролы
+             * ============================================================ */
+            function wireGlobalControls() {
+                $('pointColor').addEventListener('input', e => {
+                    state.pointColor = e.target.value;
+                    drawAll();
+                });
+
+                $('pointSize').addEventListener('input', e => {
+                    state.pointSize = +e.target.value;
+                    $('pointSizeV').textContent = state.pointSize;
+                    drawAll();
+                });
+
+                $('n').addEventListener('input', e => {
+                    state.n = +e.target.value;
+                    $('nv').textContent = state.n;
+                    drawAll();
+                });
+
+                ['showEllipse', 'showNormals', 'showEvolute', 'fillEvolute'].forEach(id => {
+                    $(id).addEventListener('change', e => {
+                        state[id] = e.target.checked;
+                        drawAll();
+                    });
+                });
+
+                /* ---- Сброс: возвращаем каждую модель к её DEFAULT_BY_INDEX ---- */
+                $('reset').addEventListener('click', () => {
+                    state.n = 60;
+                    state.showEllipse = true;
+                    state.showNormals = true;
+                    state.showEvolute = true;
+                    state.fillEvolute = false;
+                    state.pointColor = '#000000';
+                    state.pointSize = 4;
+
+                    models.forEach((m, i) => {
+                        const d = DEFAULT_BY_INDEX[i];
+                        m.a = d.a;
+                        m.b = d.b;
+                        m.ang = d.ang;
+                        m.ellipseColor = COMMON.ellipseColor;
+                        m.evoluteColor = COMMON.evoluteColor;
+                        m.point = { x: d.point.x, y: d.point.y };
+                    });
+
+                    setActiveModel(-1);
+                    syncSidebar();
+                    drawAll();
+                });
+            }
+
+            /* ============================================================
+             *  Полная синхронизация панели со состоянием
+             * ============================================================ */
+            function syncSidebar() {
+                models.forEach((m, i) => {
+                    $(`a-${i}`).value = m.a;
+                    $(`av-${i}`).textContent = m.a;
+                    $(`b-${i}`).value = m.b;
+                    $(`bv-${i}`).textContent = m.b;
+                    $(`ang-${i}`).value = m.ang;
+                    $(`angv-${i}`).textContent = m.ang;
+                    $(`ec-${i}`).value = m.ellipseColor;
+                    $(`vc-${i}`).value = m.evoluteColor;
+                    $(`dot-${i}`).style.background = m.ellipseColor;
+                    updatePointInputs(m, i, true);
+                });
+
+                $('pointColor').value = state.pointColor;
+                $('pointSize').value = state.pointSize;
+                $('pointSizeV').textContent = state.pointSize;
+                $('n').value = state.n;
+                $('nv').textContent = state.n;
+                $('showEllipse').checked = state.showEllipse;
+                $('showNormals').checked = state.showNormals;
+                $('showEvolute').checked = state.showEvolute;
+                $('fillEvolute').checked = state.fillEvolute;
+            }
+
+            /* ============================================================
+             *  Сворачивание боковой панели (гамбургер)
+             * ============================================================ */
+            function wireSidebarToggle() {
+                const sidebar = $('sidebar');
+                const btn = $('sidebarToggle');
+
+                btn.addEventListener('click', () => {
+                    sidebar.classList.toggle('collapsed');
+                    const collapsed = sidebar.classList.contains('collapsed');
+                    btn.classList.toggle('is-open', !collapsed);
+                    btn.title = collapsed ? 'Развернуть панель параметров' : 'Свернуть панель параметров';
+                    setTimeout(scheduleDrawAll, 260);
+                });
+            }
+
+            /* ============================================================
+             *  Реакция на изменение размеров
+             * ============================================================ */
+            function wireResize() {
+                if (window.ResizeObserver) {
+                    const ro = new ResizeObserver(() => scheduleDrawAll());
+                    ro.observe($('modelsContainer'));
+                    ro.observe($('sidebar'));
+                }
+                window.addEventListener('resize', scheduleDrawAll);
+                window.addEventListener('orientationchange', scheduleDrawAll);
+            }
+
+            /* ============================================================
+             *  Старт
+             * ============================================================ */
+            buildSidebar();
+            wireGlobalControls();
+            wireSidebarToggle();
+            wireResize();
+
+            requestAnimationFrame(() => {
+                requestAnimationFrame(drawAll);
+            });
+        })();
+    </script>
 </body>
+
 </html>
